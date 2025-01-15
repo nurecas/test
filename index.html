@@ -51,6 +51,11 @@
                 capture.hide();
             }
         });
+        if (capture && capture.elt.srcObject) {
+            let audioTracks = capture.elt.srcObject.getAudioTracks();
+            audioTracks.forEach(track => track.enabled = false); // Disable audio tracks
+            console.log("Audio muted");
+        }
 
         featureDirection = createVector(0, 0);
 
