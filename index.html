@@ -1,50 +1,184 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-		<title></title>
-		<meta charset="utf-8">
-		<meta name="generator" content="Three.js Editor">
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<style>
-			body {
-				font-family: sans-serif;
-				font-size: 11px;
-				background-color: #000;
-				margin: 0px;
-			}
-			canvas {
-				display: block;
-			}
-		</style>
-	</head>
-	<body ontouchstart="">
-		<script type="module">
 
-			import * as THREE from './js/three.module.js';
-			import { APP } from './js/app.js';
-			import { VRButton } from './js/VRButton.js';
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rivulets</title>
+    <meta property="og:title" content="Rivulets" />
+    <script type="application/javascript" src="https://cdn.jsdelivr.net/npm/p5@1.11.2/lib/p5.min.js"></script>
+</head>
 
-			window.THREE = THREE; // Used by APP Scripts.
-			window.VRButton = VRButton; // Used by APP Scripts.
+<body style="margin: 0">
+    <button id="saveButton" style="position: absolute; bottom: 10px; right: 10px; z-index: 10;height: 40px;border-radius: 100px;border: #100;width: 100px;background-color: darkslategrey;color: aliceblue">Snap</button>
+</body>
+<script>
+    // p5.js sketch to create generative art based on camera feed with animated river-like particles
+    let capture;
+    let pipGraphics;
+    let particlesGraphics;
+    let particles = [];
+    let fade = 10; // particle tail length
+    let radius = 10; // particle radius
+    let noiseScale = 800; // scale of curviness of the noise
+    let noiseStrength = 1; // noise change frequency
+    let num = 100; // number of particles
+    let featureDirection;
+    let lastFeatureUpdate = 0; // Last time the feature direction was updated
 
-			var loader = new THREE.FileLoader();
-			loader.load( 'app.json', function ( text ) {
+    function setup() {
+        createCanvas(windowWidth, windowHeight);
+        pipGraphics = createGraphics(160, 120);
+        particlesGraphics = createGraphics(windowWidth, windowHeight);
+        // Set a random pastel background
+        col1 = random(200, 255);
+        col2 = random(200, 255);
+        col3 = random(200, 255);
+        background(100, 100, 100);
+        capture = createCapture(VIDEO);
+        capture.size(160, 120); // Smaller size for PIP
+        capture.hide();
+        featureDirection = createVector(0, 0);
 
-				var player = new APP.Player();
-				player.load( JSON.parse( text ) );
-				player.setSize( window.innerWidth, window.innerHeight );
-				player.play();
+        // Initialize particles
+        for (let i = 0; i < num; i++) {
+            let loc = createVector(random(width), random(height));
+            let angle = random(TWO_PI);
+            let dir = createVector(cos(angle), sin(angle));
+            particles[i] = new Particle(loc, dir, random(2, 3), radius * random(0, 2));
+        }
 
-				document.body.appendChild( player.dom );
+        // Add event listener for save button
+        const saveButton = document.getElementById("saveButton");
+        saveButton.addEventListener("click", saveScreenshot);
+    }
+    let screenshotting = false;
 
-				window.addEventListener( 'resize', function () {
+    function draw() {
+        background(col1, col2, col3, fade); // Faint fade effect for trails
 
-					player.setSize( window.innerWidth, window.innerHeight );
+        capture.loadPixels();
+        if (capture.pixels.length > 0) {
+            let colors = getColorPalette(capture);
+            if (millis() - lastFeatureUpdate > 1000) { // Update feature direction every 3 seconds
+                featureDirection = detectMajorFeature(capture);
+                lastFeatureUpdate = millis();
+            }
 
-				} );
+            // Update particles and draw them to the particlesGraphics
+            particlesGraphics.clear();
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].move(featureDirection);
+                particles[i].update(colors, particlesGraphics);
+                particles[i].checkEdges();
+            }
+        }
 
-			} );
+        // Draw the particles graphics on the main canvas
+        image(particlesGraphics, 0, 0);
 
-		</script>
-	</body>
+        // Draw the camera feed as a PIP view on the pipGraphics
+        pipGraphics.image(capture, 0, 0, pipGraphics.width, pipGraphics.height);
+        pipGraphics.noFill();
+        pipGraphics.stroke(255);
+        pipGraphics.rect(0, 0, pipGraphics.width, pipGraphics.height); // Add a border around the PIP
+
+        // Draw the PIP graphics on the main canvas
+        if (!screenshotting)
+            image(pipGraphics, width - 160 - 10, 10);
+    }
+
+    function saveScreenshot() {
+        screenshotting = true;
+        // Temporarily hide the PIP view
+        pipGraphics.clear();
+        saveCanvas("screenshot", "png");
+    }
+
+    function getColorPalette(capture) {
+        let colorPalette = [];
+        let step = 10;
+
+        for (let y = 0; y < capture.height; y += step) {
+            for (let x = 0; x < capture.width; x += step) {
+                let idx = (x + y * capture.width) * 4;
+                let r = capture.pixels[idx];
+                let g = capture.pixels[idx + 1];
+                let b = capture.pixels[idx + 2];
+                colorPalette.push(color(r, g, b));
+                if (frameCount % 60 === 0) { // Change colors every 5 seconds (assuming 60 FPS)
+                    col1 = r;
+                    col2 = g;
+                    col3 = b;
+                }
+            }
+        }
+
+        return colorPalette;
+    }
+
+    function detectMajorFeature(capture) {
+        let maxBrightness = 0;
+        let majorFeature = createVector(0, 0);
+        let step = 10;
+
+        for (let y = 0; y < capture.height; y += step) {
+            for (let x = 0; x < capture.width; x += step) {
+                let idx = (x + y * capture.width) * 4;
+                let r = capture.pixels[idx];
+                let g = capture.pixels[idx + 1];
+                let b = capture.pixels[idx + 2];
+                let brightness = (r + g + b) / 3;
+                if (brightness > maxBrightness) {
+                    maxBrightness = brightness;
+                    majorFeature.set(x - capture.width / 2, y - capture.height / 2);
+                }
+            }
+        }
+
+        return majorFeature.normalize();
+    }
+
+    class Particle {
+        constructor(loc_, dir_, speed_, radius) {
+            this.loc = loc_;
+            this.dir = dir_;
+            this.speed = speed_;
+            this.color = color(255); // Default white
+            this.radius = radius;
+            this.alpha = 0;
+        }
+
+        move(featureDirection) {
+            this.angle = noise(this.loc.x / noiseScale, this.loc.y / noiseScale, frameCount / noiseScale) * TWO_PI * noiseStrength;
+            this.dir.x = cos(this.angle) + featureDirection.x * 0.5; // Blend feature direction
+            this.dir.y = sin(this.angle) + featureDirection.y * 0.5;
+            this.dir.normalize();
+            this.vel = this.dir.copy();
+            this.vel.mult(this.speed);
+            this.loc.add(this.vel);
+        }
+
+        checkEdges() {
+            if (this.loc.x < 0 || this.loc.x > width || this.loc.y < 0 || this.loc.y > height) {
+                this.loc.x = random(width);
+                this.loc.y = random(height);
+            }
+        }
+
+        update(colors, pg) {
+            if (this.alpha < 255) {
+                this.alpha += 5; // Gradually increase alpha for fade-in effect
+            }
+            // Smooth color transition
+            let targetColor = random(colors);
+            this.color = lerpColor(this.color, targetColor, 0.005);
+            pg.fill(red(this.color), green(this.color), blue(this.color), this.alpha);
+            pg.noStroke();
+            pg.ellipse(this.loc.x, this.loc.y, this.radius);
+        }
+    }
+
+</script>
+
 </html>
