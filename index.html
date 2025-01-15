@@ -28,6 +28,11 @@
 
     function setup() {
         createCanvas(windowWidth, windowHeight);
+        if (screen.orientation) {
+            lockOrientationToLandscape();
+        } else {
+            alert("Orientation lock is not supported on this device.");
+        }
         pipGraphics = createGraphics(160, 120);
         particlesGraphics = createGraphics(windowWidth, windowHeight);
         // Set a random pastel background
@@ -71,6 +76,13 @@
         const saveButton = document.getElementById("saveButton");
         saveButton.addEventListener("click", saveScreenshot);
     }
+
+    function lockOrientationToLandscape() {
+        screen.orientation.lock('landscape').catch(err => {
+            console.warn("Orientation lock failed:", err);
+        });
+    }
+
     let screenshotting = false;
 
     function draw() {
